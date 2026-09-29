@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR Computational Thinking - Advanced 5 Stages</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Sarabun:wght@400;600&display=swap');
+        
+        body {
+            font-family: 'Sarabun', sans-serif;
+            margin: 0;
+            overflow: hidden;
+            background-color: #020617; /* Very dark slate */
+            color: #e2e8f0;
+            user-select: none;
+        }
+
+        h1, h2, h3, .cyber-font {
+            font-family: 'Chakra Petch', sans-serif;
+        }
+
+        /* --- STREAMING_CHUNK: AR Container & Effects --- */
+        #ar-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            background: radial-gradient(circle at center, #0f172a 0%, #020617 100%);
+            background-image: 
+                linear-gradient(rgba(14, 165, 233, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(14, 165, 233, 0.05) 1px, transparent 1px);
+            background-size: 30px 30px;
+        }
+
+        #webgl-canvas {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 1;
+            touch-action: none;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 10;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .pointer-events-auto { pointer-events: auto; }
+
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(14, 165, 233, 0.3);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+        }
+
+        /* Scanline Overlay */
+        .scanlines {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(
+                to bottom,
+                rgba(255,255,255,0),
+                rgba(255,255,255,0) 50%,
+                rgba(0,0,0,0.1) 50%,
+                rgba(0,0,0,0.1)
+            );
+            background-size: 100% 4px;
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        /* Level Indicators */
+        .level-dot {
+            width: 12px; height: 12px;
+            border-radius: 50%;
+            background-color: #334155;
+            transition: all 0.3s ease;
+        }
+        .level-dot.active {
+            background-color: #0ea5e9;
+            box-shadow: 0 0 10px #0ea5e9;
+            transform: scale(1.2);
+        }
+        .level-dot.completed {
+            background-color: #10b981;
+            box-shadow: 0 0 10px #10b981;
+        }
+
+        /* Dynamic Modal */
+        #dynamic-modal {
+            display: none;
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 50;
+            width: 95%; max-width: 600px;
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        @keyframes popIn {
+            0% { opacity: 0; transform: translate(-50%, -40%) scale(0.9); }
+            100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        }
+
+        .choice-btn {
+            transition: all 0.2s;
+        }
+        .choice-btn:hover:not(:disabled) {
+            background-color: #334155;
+            transform: translateX(5px);
+            border-color: #0ea5e9;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ar-container">
+        <div class="scanlines"></div>
+        <canvas id="webgl-canvas"></canvas>
+
+        <!-- --- STREAMING_CHUNK: HUD and UI Layer --- -->
+        <div id="ui-layer">
+            
+            <header class="p-4 flex justify-between items-start pointer-events-auto">
+                <div class="glass-panel p-3 rounded-lg border-l-4 border-l-sky-500">
+                    <h1 class="text-xl font-bold text-sky-400 cyber-font"><i class="fas fa-microchip mr-2"></i>CT: Advanced Trials</h1>
+                    <p class="text-xs text-gray-300">ภารกิจ: แก้ปัญหาชีวิตประจำวันขั้นสูง</p>
+                </div>
+                
+                <!-- Level Progress -->
+                <div class="glass-panel p-3 rounded-lg flex flex-col items-center gap-2">
+                    <div class="text-xs text-gray-400 cyber-font font-bold mb-1">STAGE PROGRESS</div>
+                    <div class="flex gap-3">
+                        <div id="dot-1" class="level-dot active"></div>
+                        <div id="dot-2" class="level-dot"></div>
+                        <div id="dot-3" class="level-dot"></div>
+                        <div id="dot-4" class="level-dot"></div>
+                        <div id="dot-5" class="level-dot"></div>
+                    </div>
+                    <div id="stage-name" class="text-xs text-sky-400 font-mono mt-1">Stage 1: Decomposition</div>
+                </div>
+            </header>
+
+            <div class="flex-1 relative flex items-center justify-center">
+                <!-- Center Reticle -->
+                <div class="w-16 h-16 border-2 border-sky-500/30 rounded-full flex items-center justify-center pointer-events-none">
+                    <div class="w-2 h-2 bg-sky-400 rounded-full shadow-[0_0_10px_#38bdf8]"></div>
+                </div>
+
+                <div id="info-tooltip" class="absolute bottom-12 glass-panel px-6 py-3 rounded-full text-sm text-sky-200 cyber-font pointer-events-auto transition-all text-center border border-sky-500/50">
+                    <i class="fas fa-hand-pointer text-sky-400 mr-2"></i> แตะที่โฮโลแกรมเพื่อเริ่มการวิเคราะห์
+                </div>
+            </div>
+        </div>
+
+        <!-- --- STREAMING_CHUNK: Dynamic Modal --- -->
+        <div id="dynamic-modal" class="glass-panel rounded-xl overflow-hidden pointer-events-auto">
+            <!-- Header -->
+            <div id="modal-header" class="bg-gray-900 p-4 border-b border-gray-700 flex items-center gap-3">
+                <div id="modal-icon" class="w-10 h-10 rounded-full bg-sky-900/50 flex items-center justify-center text-sky-400 text-xl border border-sky-500/30">
+                    <i class="fas fa-hammer"></i>
+                </div>
+                <div>
+                    <h2 id="modal-title" class="text-xl font-bold text-sky-400 cyber-font">Title</h2>
+                    <div id="modal-pillar" class="text-xs font-mono text-gray-400 bg-gray-800 inline-block px-2 py-0.5 rounded">Pillar</div>
+                </div>
+            </div>
+            
+            <!-- Body -->
+            <div class="p-5">
+                <div id="modal-desc" class="text-sm text-gray-300 mb-4 leading-relaxed bg-gray-800/50 p-3 rounded border border-gray-700">
+                    Description...
+                </div>
+                
+                <p id="modal-question" class="text-sm text-white font-bold mb-3 cyber-font">Question?</p>
+                
+                <div id="modal-choices" class="flex flex-col gap-2 mb-4">
+                    <!-- Choices injected here -->
+                </div>
+                
+                <!-- Feedback Box (Hidden initially) -->
+                <div id="modal-feedback" class="hidden text-sm p-3 rounded mt-2 border"></div>
+            </div>
+        </div>
+
+        <!-- Victory Modal -->
+        <div id="modal-victory" class="hidden absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 glass-panel rounded-xl p-8 pointer-events-auto border-t-4 border-t-emerald-500 text-center w-11/12 max-w-md">
+            <i class="fas fa-trophy text-6xl text-emerald-400 mb-4"></i>
+            <h2 class="text-2xl font-bold text-white mb-2 cyber-font">CLEAR! ทะลุขีดจำกัด</h2>
+            <p class="text-gray-300 mb-6 text-sm leading-relaxed">
+                คุณสามารถประยุกต์ใช้ 4 เสาหลักของ Computational Thinking ในการแก้ปัญหาที่ซับซ้อนในชีวิตประจำวันได้อย่างยอดเยี่ยม!
+            </p>
+            <button class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-8 rounded-full shadow-[0_0_15px_rgba(16,185,129,0.5)] cyber-font transition-all" onclick="location.reload()">
+                <i class="fas fa-redo mr-2"></i> รีสตาร์ทระบบ
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        // --- STREAMING_CHUNK: Database & Game Logic ---
+        
+        const levelData = [
+            {
+                id: 1,
+                pillar: "Decomposition (การแยกส่วนประกอบ)",
+                icon: "fa-desktop",
+                color: "text-blue-400",
+                borderColor: "border-blue-500",
+                title: "วิกฤตคอมพิวเตอร์ดับ",
+                desc: "คอมพิวเตอร์ของคุณจู่ๆ ก็เปิดไม่ติด พัดลมหมุน ไฟเมนบอร์ดติด แต่หน้าจอดำสนิท และมีเสียงร้อง (Beep Code) 'ติ๊ด-ติ๊ด-ติ๊ด' 3 ครั้ง หากเรามองเป็นปัญหาใหญ่คือ 'คอมพัง' เราอาจจะต้องยกไปร้านและเสียเงินฟรีๆ<br><br>จงใช้ Decomposition แยกส่วนประกอบฮาร์ดแวร์เพื่อวิเคราะห์ต้นตอ",
+                question: "จากอาการที่เกิดขึ้น ปัญหาน่าจะเกิดจากระบบย่อย (Subsystem) ใดมากที่สุด?",
+                choices: [
+                    { text: "ระบบจ่ายไฟ (Power Supply Unit) จ่ายไฟไม่พอ", isCorrect: false, explanation: "ผิดครับ ถ้าไฟไม่พอ พัดลมและไฟเมนบอร์ดจะไม่ติดเลยตั้งแต่แรก" },
+                    { text: "ระบบหน่วยความจำ (RAM) หลวมหรือมีปัญหา", isCorrect: true, explanation: "ถูกต้อง! อาการจอดำและมีเสียง Beep Code ส่วนใหญ่เกิดจาก RAM หรือ VGA (การ์ดจอ) หลวม การแยกปัญหาทำให้เราแก้ได้ตรงจุดเพียงแค่ถอดมาขัดยางลบ" },
+                    { text: "ระบบระบายความร้อน (Cooling Fan) เสีย", isCorrect: false, explanation: "ผิดครับ ระบบแจ้งแล้วว่าพัดลมยังหมุนปกติ" },
+                    { text: "ระบบปฏิบัติการ (Windows) ล่ม", isCorrect: false, explanation: "ผิดครับ อาการนี้เกิดขึ้นก่อนที่ระบบจะรัน Windows เสียอีก (ระดับ Hardware)" }
+                ]
+            },
+            {
+                id: 2,
+                pillar: "Pattern Recognition (การหารูปแบบ)",
+                icon: "fa-shield-alt",
+                color: "text-purple-400",
+                borderColor: "border-purple-500",
+                title: "รหัสผ่านสมาร์ทเซฟ",
+                desc: "ตู้เซฟอัจฉริยะของคุณถูกตั้งค่าให้เปลี่ยนรหัสผ่านทุกวันตาม 'สมการความสัมพันธ์' บางอย่าง คุณจำรหัสของ 4 วันที่ผ่านมาได้คือ: <strong>3, 8, 15, 24</strong>",
+                question: "หากคุณต้องการเปิดตู้เซฟในวันนี้ (วันที่ 5) รหัสผ่าน 2 หลักที่คุณต้องกดคือเลขอะไร?",
+                choices: [
+                    { text: "32", isCorrect: false, explanation: "ผิดครับ ลองหาผลต่าง (Difference) ระหว่างตัวเลขแต่ละตัวดูสิ (8-3=5, 15-8=7...)" },
+                    { text: "35", isCorrect: true, explanation: "ถูกต้อง! รูปแบบคือผลต่างเพิ่มขึ้นทีละ 2 (ห่างกัน 5, 7, 9) ดังนั้นตัวต่อไปต้องบวก 11 (24+11 = 35) หรือมองเป็นสมการ n² + 2n ก็ได้" },
+                    { text: "36", isCorrect: false, explanation: "ผิดครับ เลขนี้ไม่สอดคล้องกับอนุกรม" },
+                    { text: "48", isCorrect: false, explanation: "ผิดครับ ก้าวกระโดดไกลเกินไป" }
+                ]
+            },
+            {
+                id: 3,
+                pillar: "Abstraction (การคิดเชิงนามธรรม)",
+                icon: "fa-map-marked-alt",
+                color: "text-yellow-400",
+                borderColor: "border-yellow-500",
+                title: "แผนหนีรถติดไปสอบ",
+                desc: "คุณมีสอบเวลา 08:30 น. ตอนนี้ 07:30 น. แอปพลิเคชันแผนที่แสดงข้อมูลมหาศาลดังนี้:<br>- เส้นทาง A: 15 กม., รถติดหนัก, วิวสวย, ค่าผ่านทาง 50 บ., มีหมาจรจัด<br>- เส้นทาง B: 20 กม., ถนนโล่ง, ฝุ่นเยอะ, ไม่มีค่าผ่านทาง, ผ่านร้านขนม",
+                question: "ในการเขียนโปรแกรมเพื่อคำนวณ 'เส้นทางที่ไปทันเวลาและประหยัดที่สุด' ข้อมูลใดคือ Abstraction (แก่นสำคัญ) ที่คุณต้องดึงมาใช้ และตัดส่วนที่เหลือทิ้ง?",
+                choices: [
+                    { text: "ระยะทาง, สภาพจราจร, ความสวยงามของวิว", isCorrect: false, explanation: "ผิดครับ 'วิวสวย' ไม่ส่งผลต่อสมการเวลาและค่าใช้จ่ายเลย" },
+                    { text: "ระยะทาง, ฝุ่นเยอะ, ค่าผ่านทาง, หมาจรจัด", isCorrect: false, explanation: "ผิดครับ หมาจรจัดและฝุ่น เป็นข้อมูลขยะ (Noise) ในการแก้ปัญหานี้" },
+                    { text: "ระยะทาง, สภาพจราจร, ค่าผ่านทาง", isCorrect: true, explanation: "ถูกต้อง! นี่คือการทำ Abstraction คัดลอกเฉพาะข้อมูลที่มีผลต่อตัวแปร 'เวลา' (ระยะทาง+จราจร) และ 'ประหยัด' (ค่าผ่านทาง)" },
+                    { text: "ต้องนำข้อมูลทุกอย่างมาคำนวณเพื่อความแม่นยำที่สุด", isCorrect: false, explanation: "ผิดหลักการครับ การเอาข้อมูลที่ไม่เกี่ยวมาคำนวณจะทำให้โปรแกรมทำงานช้าและซับซ้อนเกินจำเป็น" }
+                ]
+            },
+            {
+                id: 4,
+                pillar: "Algorithm Design (การออกแบบขั้นตอนวิธี)",
+                icon: "fa-robot",
+                color: "text-emerald-400",
+                borderColor: "border-emerald-500",
+                title: "บั๊กในหุ่นยนต์ทำความสะอาด",
+                desc: "คุณเขียนโปรแกรมให้หุ่นยนต์ดูดฝุ่นทำงานด้วยลอจิกดังนี้:<br>1. เดินหน้า<br>2. ดูดฝุ่น<br>3. ตรวจสอบสิ่งกีดขวาง<br>4. ถ้าเจอ ให้เลี้ยวขวา<br>ผลปรากฏว่า หุ่นยนต์ชนกำแพงพังตั้งแต่วินาทีแรก",
+                question: "อัลกอริทึมนี้มีข้อผิดพลาดทางตรรกะ (Logic Bug) ตรงจุดใด?",
+                choices: [
+                    { text: "ไม่มีคำสั่งหยุดการทำงาน (End) ทำให้หุ่นยนต์ทำงานไม่สิ้นสุด", isCorrect: false, explanation: "ถึงไม่มีคำสั่ง End แต่หุ่นยนต์พังตั้งแต่สเต็ปแรก แสดงว่าบั๊กอยู่ที่จุดเริ่มต้น" },
+                    { text: "ควรเปลี่ยนจากการเลี้ยวขวา เป็นการถอยหลัง", isCorrect: false, explanation: "ผิดครับ เลี้ยวขวาก็หลบสิ่งกีดขวางได้ ปัญหาไม่ได้อยู่ตรงนั้น" },
+                    { text: "ลำดับผิด! ต้องตรวจสอบสิ่งกีดขวาง (ข้อ 3) ก่อนที่จะสั่งเดินหน้า (ข้อ 1)", isCorrect: true, explanation: "ถูกต้อง! อัลกอริทึมที่ดีต้องตรวจสอบเงื่อนไขความปลอดภัยก่อนลงมือทำ (Check before Move) ไม่งั้นจะเกิดข้อผิดพลาดรุนแรง" },
+                    { text: "ลอจิกถูกต้องแล้ว หุ่นยนต์น่าจะเซ็นเซอร์เสีย", isCorrect: false, explanation: "ผิดครับ ในมุมมองของโปรแกรมเมอร์ ลำดับ Flowchart นี้ผิดหลักการอย่างชัดเจน" }
+                ]
+            },
+            {
+                id: 5,
+                pillar: "Integration (บูรณาการ)",
+                icon: "fa-brain",
+                color: "text-pink-400",
+                borderColor: "border-pink-500",
+                title: "วิกฤตตารางชีวิต",
+                desc: "พรุ่งนี้คุณมีสิ่งที่ต้องทำคือ: สอบคณิตศาสตร์, ซื้อวัตถุดิบทำอาหาร, ซ่อมจักรยาน, และพาสุนัขไปเดินเล่น คุณจึงประยุกต์ใช้ 4 เสาหลักของ CT เข้ามาจัดการชีวิตเพื่อไม่ให้วุ่นวาย",
+                question: "พฤติกรรมในข้อใดต่อไปนี้ คือการใช้แนวคิด 'Pattern Recognition (การหารูปแบบ)' ?",
+                choices: [
+                    { text: "ลิสต์รายการสิ่งที่จะทำทั้งหมดเรียงตามลำดับเวลาตั้งแต่ 07:00 ถึง 18:00 น.", isCorrect: false, explanation: "ผิดครับ นั่นคือการทำ Algorithm (การออกแบบขั้นตอน)" },
+                    { text: "สังเกตจากสัปดาห์ก่อนๆ ว่าซูเปอร์มาร์เก็ตคนจะน้อยที่สุดช่วงบ่ายโมง จึงเลือกไปเวลานั้น", isCorrect: true, explanation: "ถูกต้อง! การนำประสบการณ์หรือข้อมูลในอดีตมาหาความสอดคล้อง เพื่อคาดการณ์อนาคต คือใจความสำคัญของการหารูปแบบ (Pattern)" },
+                    { text: "มองข้ามสีและยี่ห้อของวัตถุดิบ โฟกัสแค่ว่าจะซื้อเนื้อสัตว์หรือผักชนิดใดตามลิสต์", isCorrect: false, explanation: "ผิดครับ นั่นคือ Abstraction (การคัดกรองเฉพาะสาระสำคัญ)" },
+                    { text: "แบ่งการ 'ซ่อมจักรยาน' ออกเป็นการเช็คลมยาง, เช็คโซ่, และเช็คเบรก", isCorrect: false, explanation: "ผิดครับ นั่นคือ Decomposition (การแยกปัญหาย่อย)" }
+                ]
+            }
+        ];
+
+        let currentLevel = 1;
+
+        // Shuffle function for choices
+        function shuffleArray(array) {
+            let shuffled = [...array];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            return shuffled;
+        }
+
+        function loadLevelUI(level) {
+            const data = levelData[level - 1];
+            
+            // Update Header status
+            document.getElementById('stage-name').innerText = `Stage ${level}: ${data.pillar.split(' ')[0]}`;
+            
+            // Setup Modal Content
+            document.getElementById('modal-title').innerText = data.title;
+            document.getElementById('modal-title').className = `text-xl font-bold cyber-font ${data.color}`;
+            document.getElementById('modal-pillar').innerText = data.pillar;
+            
+            const iconEl = document.getElementById('modal-icon');
+            iconEl.className = `w-10 h-10 rounded-full flex items-center justify-center text-xl border bg-gray-900/50 ${data.color} ${data.borderColor}`;
+            iconEl.innerHTML = `<i class="fas ${data.icon}"></i>`;
+            
+            // Change top border color of modal dynamically
+            document.getElementById('dynamic-modal').className = `glass-panel rounded-xl overflow-hidden pointer-events-auto border-t-4 ${data.borderColor}`;
+
+            document.getElementById('modal-desc').innerHTML = data.desc;
+            document.getElementById('modal-question').innerText = data.question;
+
+            // Reset and Inject Choices
+            const choicesContainer = document.getElementById('modal-choices');
+            choicesContainer.innerHTML = '';
+            
+            const shuffledChoices = shuffleArray(data.choices);
+            
+            shuffledChoices.forEach((choice, index) => {
+                const btn = document.createElement('button');
+                btn.className = `choice-btn bg-gray-800 border border-gray-600 p-3 rounded text-left text-sm text-gray-200`;
+                btn.innerText = `${String.fromCharCode(161 + index)}. ${choice.text}`;
+                btn.onclick = () => handleAnswer(choice, btn);
+                choicesContainer.appendChild(btn);
+            });
+
+            // Hide feedback
+            const feedbackEl = document.getElementById('modal-feedback');
+            feedbackEl.classList.add('hidden');
+            feedbackEl.className = 'hidden text-sm p-3 rounded mt-2 border';
+        }
+
+        function handleAnswer(choice, btnElement) {
+            const feedbackEl = document.getElementById('modal-feedback');
+            const allBtns = document.querySelectorAll('.choice-btn');
+            
+            // Reset button styles
+            allBtns.forEach(btn => {
+                btn.classList.remove('bg-emerald-800', 'border-emerald-500', 'bg-red-900', 'border-red-500');
+                btn.classList.add('bg-gray-800', 'border-gray-600');
+                btn.disabled = true; // Lock all buttons
+            });
+
+            feedbackEl.classList.remove('hidden');
+
+            if (choice.isCorrect) {
+                btnElement.classList.replace('bg-gray-800', 'bg-emerald-800');
+                btnElement.classList.replace('border-gray-600', 'border-emerald-500');
+                
+                feedbackEl.classList.add('bg-emerald-900/50', 'border-emerald-500', 'text-emerald-300');
+                feedbackEl.innerHTML = `<strong><i class="fas fa-check-circle mr-1"></i> CORRECT:</strong> ${choice.explanation}`;
+                
+                // Success: Transition to next level after delay
+                setTimeout(() => {
+                    document.getElementById('dynamic-modal').style.display = 'none';
+                    levelComplete();
+                }, 4000);
+
+            } else {
+                btnElement.classList.replace('bg-gray-800', 'bg-red-900');
+                btnElement.classList.replace('border-gray-600', 'border-red-500');
+                
+                feedbackEl.classList.add('bg-red-900/50', 'border-red-500', 'text-red-300');
+                feedbackEl.innerHTML = `<strong><i class="fas fa-times-circle mr-1"></i> ERROR:</strong> ${choice.explanation}`;
+                
+                // Allow retry
+                setTimeout(() => {
+                    feedbackEl.classList.add('hidden');
+                    feedbackEl.className = 'hidden text-sm p-3 rounded mt-2 border';
+                    allBtns.forEach(btn => btn.disabled = false);
+                    btnElement.classList.replace('bg-red-900', 'bg-gray-800');
+                    btnElement.classList.replace('border-red-500', 'border-gray-600');
+                }, 3000);
+            }
+        }
+
+        function levelComplete() {
+            // Update UI Dot
+            const dot = document.getElementById(`dot-${currentLevel}`);
+            dot.classList.remove('active');
+            dot.classList.add('completed');
+
+            // Trigger 3D Transition
+            animateOutCurrentModel(() => {
+                currentLevel++;
+                if (currentLevel > 5) {
+                    showVictory();
+                } else {
+                    document.getElementById(`dot-${currentLevel}`).classList.add('active');
+                    load3DModelForLevel(currentLevel);
+                    document.getElementById('info-tooltip').style.display = 'block';
+                    document.getElementById('info-tooltip').innerText = "แตะที่โฮโลแกรมเพื่อเริ่มการวิเคราะห์ Stage " + currentLevel;
+                }
+            });
+        }
+
+        function showVictory() {
+            document.getElementById('info-tooltip').style.display = 'none';
+            document.getElementById('modal-victory').style.display = 'block';
+            // Show all 3D models floating around
+            levelGroups.forEach((group, idx) => {
+                scene.add(group);
+                group.position.set((idx - 2) * 2, 0, -2);
+                group.scale.set(0.5, 0.5, 0.5);
+            });
+        }
+
+        // --- STREAMING_CHUNK: Three.js Setup & Hologram Rendering ---
+        
+        const canvas = document.getElementById('webgl-canvas');
+        const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x020617, 0.05);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 3, 6);
+        camera.lookAt(0, 0.5, 0);
+
+        // Holographic Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+        scene.add(ambientLight);
+
+        const spotLight = new THREE.SpotLight(0x0ea5e9, 2);
+        spotLight.position.set(0, 8, 0);
+        spotLight.angle = Math.PI / 6;
+        spotLight.penumbra = 0.5;
+        scene.add(spotLight);
+
+        const bottomLight = new THREE.PointLight(0x38bdf8, 1, 10);
+        bottomLight.position.set(0, -1, 0);
+        scene.add(bottomLight);
+
+        // Pedestal (Base for hologram)
+        const pedestalGeo = new THREE.CylinderGeometry(1.5, 2, 0.5, 32);
+        const pedestalMat = new THREE.MeshStandardMaterial({ 
+            color: 0x0f172a, roughness: 0.1, metalness: 0.8,
+            emissive: 0x0ea5e9, emissiveIntensity: 0.2
+        });
+        const pedestal = new THREE.Mesh(pedestalGeo, pedestalMat);
+        pedestal.position.y = -0.25;
+        scene.add(pedestal);
+
+        // Hologram Rings
+        const ringGeo = new THREE.TorusGeometry(1.5, 0.02, 16, 64);
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.5 });
+        const ring1 = new THREE.Mesh(ringGeo, ringMat);
+        ring1.rotation.x = Math.PI / 2;
+        ring1.position.y = 0.1;
+        scene.add(ring1);
+
+        // Array to hold the 5 level models
+        const levelGroups = [];
+        
+        // Common Hologram Material Base
+        const createHoloMat = (colorHex) => new THREE.MeshStandardMaterial({
+            color: colorHex,
+            transparent: true,
+            opacity: 0.8,
+            wireframe: true,
+            emissive: colorHex,
+            emissiveIntensity: 0.5
+        });
+
+        // 1. PC Case (Decomposition)
+        const g1 = new THREE.Group();
+        const pcCase = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1.5), createHoloMat(0x3b82f6));
+        const pcRAM = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.8, 0.4), createHoloMat(0xf87171)); // Red RAM
+        pcRAM.position.set(0.2, 0, 0);
+        g1.add(pcCase, pcRAM);
+        levelGroups.push(g1);
+
+        // 2. Smart Safe (Pattern)
+        const g2 = new THREE.Group();
+        const safeBody = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 1.5), createHoloMat(0xa855f7));
+        const safeDial = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.2, 16), createHoloMat(0xd8b4fe));
+        safeDial.rotation.x = Math.PI / 2;
+        safeDial.position.set(0, 0, 0.8);
+        g2.add(safeBody, safeDial);
+        levelGroups.push(g2);
+
+        // 3. Map/City (Abstraction)
+        const g3 = new THREE.Group();
+        const mapBase = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 2.5), createHoloMat(0xeab308));
+        mapBase.rotation.x = -Math.PI / 2;
+        const b1 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.8, 0.3), createHoloMat(0xfef08a));
+        b1.position.set(-0.5, 0.4, -0.5);
+        const b2 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.4), createHoloMat(0xfef08a));
+        b2.position.set(0.6, 0.25, 0.4);
+        g3.add(mapBase, b1, b2);
+        levelGroups.push(g3);
+
+        // 4. Robot Vacuum (Algorithm)
+        const g4 = new THREE.Group();
+        const botBody = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 0.2, 32), createHoloMat(0x10b981));
+        const botEye = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.1, 0.1), createHoloMat(0x6ee7b7));
+        botEye.position.set(0, 0.15, 0.5);
+        g4.add(botBody, botEye);
+        g4.position.y = 0.5;
+        levelGroups.push(g4);
+
+        // 5. Calendar/Clock (Integration)
+        const g5 = new THREE.Group();
+        const clockRing = new THREE.Mesh(new THREE.TorusGeometry(0.8, 0.1, 16, 32), createHoloMat(0xf43f5e));
+        const clockHand = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.6, 0.05), createHoloMat(0xfda4af));
+        clockHand.position.y = 0.3;
+        g5.add(clockRing, clockHand);
+        g5.position.y = 1;
+        levelGroups.push(g5);
+
+        let activeGroup = null;
+
+        function load3DModelForLevel(level) {
+            if(activeGroup) scene.remove(activeGroup);
+            
+            activeGroup = levelGroups[level - 1];
+            
+            // Set initial state for animation
+            activeGroup.position.set(0, 3, 0); 
+            activeGroup.scale.set(0.1, 0.1, 0.1);
+            scene.add(activeGroup);
+
+            // Animate Drop In
+            new TWEEN.Tween(activeGroup.position)
+                .to({ y: 0.5 }, 1000)
+                .easing(TWEEN.Easing.Bounce.Out)
+                .start();
+
+            new TWEEN.Tween(activeGroup.scale)
+                .to({ x: 1, y: 1, z: 1 }, 1000)
+                .easing(TWEEN.Easing.Back.Out)
+                .start();
+        }
+
+        function animateOutCurrentModel(callback) {
+            if(!activeGroup) { callback(); return; }
+            
+            new TWEEN.Tween(activeGroup.scale)
+                .to({ x: 0, y: 0, z: 0 }, 500)
+                .easing(TWEEN.Easing.Back.In)
+                .start();
+
+            new TWEEN.Tween(activeGroup.position)
+                .to({ y: -1 }, 500)
+                .easing(TWEEN.Easing.Cubic.In)
+                .onComplete(() => {
+                    scene.remove(activeGroup);
+                    callback();
+                })
+                .start();
+        }
+
+        // --- STREAMING_CHUNK: Interaction Logic ---
+        
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        window.addEventListener('pointerdown', (event) => {
+            // Check if clicking on UI
+            if (event.target.closest('#dynamic-modal') || event.target.closest('header')) return;
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            
+            if (activeGroup) {
+                const intersects = raycaster.intersectObjects(activeGroup.children, true);
+                if (intersects.length > 0) {
+                    // Clicked the hologram
+                    document.getElementById('info-tooltip').style.display = 'none';
+                    loadLevelUI(currentLevel);
+                    document.getElementById('dynamic-modal').style.display = 'block';
+                }
+            }
+        });
+
+        // --- STREAMING_CHUNK: Render Loop ---
+        
+        const clock = new THREE.Clock();
+
+        function animate(time) {
+            requestAnimationFrame(animate);
+            TWEEN.update(time);
+
+            const elapsedTime = clock.getElapsedTime();
+
+            // Animate Pedestal Rings
+            ring1.scale.set(
+                1 + Math.sin(elapsedTime * 2) * 0.1,
+                1 + Math.sin(elapsedTime * 2) * 0.1,
+                1
+            );
+            ring1.material.opacity = 0.3 + Math.sin(elapsedTime * 4) * 0.2;
+
+            // Animate Hologram Idle
+            if (activeGroup) {
+                activeGroup.rotation.y += 0.01;
+                activeGroup.position.y = 0.5 + Math.sin(elapsedTime * 1.5) * 0.1;
+                
+                // Specific animations
+                if (currentLevel === 4) {
+                    activeGroup.children[1].rotation.y = Math.sin(elapsedTime * 5) * 0.5; // Bot eye scan
+                }
+                if (currentLevel === 5) {
+                    activeGroup.children[1].rotation.z = -elapsedTime * 2; // Clock hand spin
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Initialize Game
+        load3DModelForLevel(1);
+        animate();
+
+    </script>
+</body>
+</html>
